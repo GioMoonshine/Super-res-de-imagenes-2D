@@ -2,371 +2,282 @@ import numpy as np
 from abc import ABC, abstractmethod
 from operators import compute_gradient_x, compute_gradient_y, compute_divergence
 
-
 class Regularizer(ABC):
     """
-    Clase base abstracta para regularizadores.
+    Interfaz abstracta para términos de penalización (Priors).
     
-    Todos los regularizadores deben implementar:
-    - compute_value(x): calcula R(x)
-    - compute_gradient(x): calcula ∇R(x)
+    Define el contrato estructural que cualquier modelo de regularización
+    debe cumplir para ser compatible con el solver de optimización.
     """
     
     @abstractmethod
     def compute_value(self, x):
         """
-        Calcula el valor del término de regularización R(x).
+        Evalúa la energía escalar del regularizador J_reg(x).
         
-        Parameters:
-        -----------
+        Entradas:
+        ---------
         x : ndarray
-            Imagen actual
+            Estado actual de la imagen.
         
-        Returns:
-        --------
+        Salida:
+        -------
         float
-            Valor de R(x)
+            Costo asociado a la complejidad o rugosidad de la imagen.
         """
         pass
     
     @abstractmethod
     def compute_gradient(self, x):
         """
-        Calcula el gradiente del término de regularización ∇R(x).
+        Calcula la derivada variacional (gradiente funcional) del regularizador.
+        Necesario para indicar la dirección de descenso en la optimización.
         
-        Parameters:
-        -----------
+        Entradas:
+        ---------
         x : ndarray
-            Imagen actual
+            Imagen actual.
         
-        Returns:
-        --------
+        Salida:
+        -------
         ndarray
-            Gradiente ∇R(x) con la misma forma que x
+            Matriz de gradientes con las mismas dimensiones que x.
         """
         pass
 
 
 class L2GradientRegularizer(Regularizer):
     """
-    Regularizador L2 del gradiente (Tikhonov):
+    Modelo de regularización cuadrática (Tikhonov).
     
-    R_L2(x) = ||Dx·x||² + ||Dy·x||²
+    Penaliza la energía total de las derivadas.
+    Formula: R(x) = ||∇x||²
     
-    Donde Dx y Dy son operadores de diferencias finitas.
-    
-    El gradiente es:
-    ∇R_L2(x) ≈ -2∇·(∇x) = -2Δx
-    
-    donde Δ es el operador Laplaciano discreto.
+    Características:
+    - Es estrictamente convexo (fácil de optimizar).
+    - Provoca un suavizado global (difusión isotrópica), lo que tiende
+      a difuminar los bordes y detalles finos.
+    - Su gradiente es proporcional al Laplaciano negativo (-Δx).
     """
     
     def __init__(self):
-        """Inicializa el regularizador L2."""
+        """Constructor vacío (este modelo no requiere hiperparámetros)."""
         pass
     
     def compute_value(self, x):
         """
-        Calcula R_L2(x) = ||Dx·x||² + ||Dy·x||²
-        
-        Parameters:
-        -----------
-        x : ndarray
-            Imagen actual
-        
-        Returns:
-        --------
-        float
-            Valor de la regularización L2
+        Calcula la suma de los cuadrados de las diferencias entre píxeles.
+        Medida de la "rugosidad" global.
         """
-        # Calcular gradientes
-        grad_x = compute_gradient_x(x)
-        grad_y = compute_gradient_y(x)
+        # Extracción de características de primer orden
+        dx = compute_gradient_x(x)
+        dy = compute_gradient_y(x)
         
-        # Norma L2 al cuadrado de cada gradiente
-        value = np.sum(grad_x**2) + np.sum(grad_y**2)
+        # Energía L2: suma(dx² + dy²)
+        energy = np.sum(dx**2) + np.sum(dy**2)
         
-        return value
+        return energy
     
     def compute_gradient(self, x):
         """
-        Calcula ∇R_L2(x) = -2∇·(∇x)
+        Obtiene el gradiente analítico.
         
-        Equivale a aplicar menos dos veces el Laplaciano discreto.
-        
-        Parameters:
-        -----------
-        x : ndarray
-            Imagen actual
-        
-        Returns:
-        --------
-        ndarray
-            Gradiente del regularizador
+        Resultado: -2 * Divergencia(Gradiente) = -2 * Laplaciano
+        Esto empuja los píxeles hacia el promedio de sus vecinos.
         """
-        # Calcular gradientes de la imagen
-        grad_x = compute_gradient_x(x)
-        grad_y = compute_gradient_y(x)
+        dx = compute_gradient_x(x)
+        dy = compute_gradient_y(x)
         
-        # Calcular divergencia (esto da -Δx)
-        div = compute_divergence(grad_x, grad_y)
+        # El operador adjunto del gradiente negativo es la divergencia
+        laplacian_component = compute_divergence(dx, dy)
         
-        # El gradiente es -2 veces la divergencia
-        gradient = -2.0 * div
+        # Factor de escala derivado de la regla de la cadena (d/dx x² = 2x)
+        gradient = -2.0 * laplacian_component
         
         return gradient
 
 
 class HuberGradientRegularizer(Regularizer):
     """
-    Regularizador Huber del gradiente (Huber-TV):
+    Modelo de regularización robusta (Huber / Pseudo-TV).
     
-    R_Huber(x) = Σ[φ_δ((Dx·x)_ij) + φ_δ((Dy·x)_ij)]
+    Aproximación diferenciable a la Variación Total (TV).
+    Comportamiento híbrido controlado por 'delta':
     
-    donde φ_δ(z) es la función de Huber:
-        φ_δ(z) = { z²/(2δ)      si |z| ≤ δ
-                 { |z| - δ/2    si |z| > δ
-    
-    El gradiente se calcula mediante:
-    ∇R_Huber(x) = -∇·(φ'_δ(Dx·x), φ'_δ(Dy·x))
-    
-    donde φ'_δ(z) = { z/δ        si |z| ≤ δ
-                    { sign(z)    si |z| > δ
+    - Región |∇x| <= δ: Cuadrática (L2). Evita el efecto 'staircasing' en zonas planas.
+    - Región |∇x| > δ:  Lineal (L1). Penaliza menos los grandes saltos,
+                        permitiendo la conservación de bordes nítidos.
     """
     
     def __init__(self, delta=0.1):
         """
-        Inicializa el regularizador Huber.
-        
-        Parameters:
-        -----------
-        delta : float
-            Parámetro δ de la función de Huber (default: 0.1)
-            - δ pequeño (≈0.01-0.1): preserva mejor los bordes
-            - δ grande (≈1.0): se acerca más a L2
+        Args:
+            delta (float): Umbral de transición. Define qué se considera
+                           "ruido suave" (L2) vs "borde estructural" (L1).
         """
         self.delta = delta
     
     def _huber_function(self, z):
         """
-        Función de Huber φ_δ(z).
-        
-        Parameters:
-        -----------
-        z : ndarray
-            Valores de entrada
-        
-        Returns:
-        --------
-        ndarray
-            Valores de Huber aplicados elemento a elemento
+        Núcleo de la función de coste Huber aplicada elemento a elemento.
         """
-        abs_z = np.abs(z)
+        magnitude = np.abs(z)
         
-        # Región cuadrática: |z| ≤ δ
-        quadratic_region = abs_z <= self.delta
-        huber_values = np.where(
-            quadratic_region,
-            z**2 / (2 * self.delta),  # z²/(2δ)
-            abs_z - self.delta / 2     # |z| - δ/2
+        # Máscara lógica para identificar gradientes suaves
+        is_smooth = magnitude <= self.delta
+        
+        cost = np.where(
+            is_smooth,
+            z**2 / (2 * self.delta),       # Parábola (Suavizado fuerte)
+            magnitude - self.delta / 2     # Cono (Preservación de bordes)
         )
         
-        return huber_values
+        return cost
     
     def _huber_derivative(self, z):
         """
-        Derivada de la función de Huber φ'_δ(z).
-        
-        Parameters:
-        -----------
-        z : ndarray
-            Valores de entrada
-        
-        Returns:
-        --------
-        ndarray
-            Derivadas aplicadas elemento a elemento
+        Primera derivada del núcleo Huber (Función de influencia).
         """
-        abs_z = np.abs(z)
+        magnitude = np.abs(z)
+        is_smooth = magnitude <= self.delta
         
-        # Región cuadrática: |z| ≤ δ
-        quadratic_region = abs_z <= self.delta
-        huber_deriv = np.where(
-            quadratic_region,
-            z / self.delta,      # z/δ
-            np.sign(z)           # sign(z)
+        influence = np.where(
+            is_smooth,
+            z / self.delta,    # Lineal (proporcional al error)
+            np.sign(z)         # Constante (saturación, robustez ante outliers)
         )
         
-        return huber_deriv
+        return influence
     
     def compute_value(self, x):
         """
-        Calcula R_Huber(x) = Σ[φ_δ((Dx·x)_ij) + φ_δ((Dy·x)_ij)]
-        
-        Parameters:
-        -----------
-        x : ndarray
-            Imagen actual
-        
-        Returns:
-        --------
-        float
-            Valor de la regularización Huber
+        Suma de costos Huber sobre los gradientes horizontal y vertical.
         """
-        # Calcular gradientes
-        grad_x = compute_gradient_x(x)
-        grad_y = compute_gradient_y(x)
+        dx = compute_gradient_x(x)
+        dy = compute_gradient_y(x)
         
-        # Aplicar función de Huber a cada componente del gradiente
-        huber_x = self._huber_function(grad_x)
-        huber_y = self._huber_function(grad_y)
+        # Aplicación del costo robusto
+        cost_x = self._huber_function(dx)
+        cost_y = self._huber_function(dy)
         
-        # Sumar sobre todos los píxeles
-        value = np.sum(huber_x) + np.sum(huber_y)
-        
-        return value
+        return np.sum(cost_x) + np.sum(cost_y)
     
     def compute_gradient(self, x):
         """
-        Calcula ∇R_Huber(x) = -∇·(φ'_δ(Dx·x), φ'_δ(Dy·x))
+        Cálculo del gradiente mediante la divergencia del campo no-lineal.
         
-        Parameters:
-        -----------
-        x : ndarray
-            Imagen actual
-        
-        Returns:
-        --------
-        ndarray
-            Gradiente del regularizador Huber
+        ∇J = -div( h'(∇x) )
         """
-        # Calcular gradientes de la imagen
-        grad_x = compute_gradient_x(x)
-        grad_y = compute_gradient_y(x)
+        dx = compute_gradient_x(x)
+        dy = compute_gradient_y(x)
         
-        # Aplicar derivada de Huber a cada componente
-        weighted_grad_x = self._huber_derivative(grad_x)
-        weighted_grad_y = self._huber_derivative(grad_y)
+        # Ponderación no lineal de los gradientes
+        # (Los bordes fuertes se atenúan, el ruido suave se mantiene)
+        grad_weight_x = self._huber_derivative(dx)
+        grad_weight_y = self._huber_derivative(dy)
         
-        # Calcular divergencia del campo ponderado
-        div = compute_divergence(weighted_grad_x, weighted_grad_y)
-        
-        # El gradiente es menos la divergencia
-        gradient = -div
+        # Divergencia del campo ponderado
+        gradient = -compute_divergence(grad_weight_x, grad_weight_y)
         
         return gradient
 
 
 # ============================================================================
-# Script de prueba
+# Banco de Pruebas (Unit Testing)
 # ============================================================================
 
 if __name__ == "__main__":
-    print("=" * 70)
-    print("Probando Regularizadores")
-    print("=" * 70)
+    print("*" * 70)
+    print(" DIAGNÓSTICO DE MÓDULOS DE REGULARIZACIÓN")
+    print("*" * 70)
     
-    # Crear una imagen de prueba
+    # Generación de entorno de prueba estocástico
     np.random.seed(42)
-    image = np.random.rand(32, 32)
-    print(f"\nImagen de prueba: shape = {image.shape}")
+    test_img = np.random.rand(32, 32)
+    print(f"\n[INIT] Imagen de ruido aleatorio generada: {test_img.shape}")
     
     # ========================================================================
-    # Prueba 1: Regularizador L2
+    # Test 1: Comportamiento L2
     # ========================================================================
-    print("\n" + "=" * 70)
-    print("1. REGULARIZADOR L2 DEL GRADIENTE")
-    print("=" * 70)
+    print("\n" + "-" * 70)
+    print(" [1] EVALUACIÓN DEL MODELO TIKHONOV (L2)")
+    print("-" * 70)
     
-    reg_l2 = L2GradientRegularizer()
+    l2_model = L2GradientRegularizer()
     
-    # Calcular valor
-    value_l2 = reg_l2.compute_value(image)
-    print(f"\nR_L2(x) = {value_l2:.6f}")
+    cost_l2 = l2_model.compute_value(test_img)
+    print(f"\n  -> Energía total (Suavidad): {cost_l2:.5f}")
     
-    # Calcular gradiente
-    grad_l2 = reg_l2.compute_gradient(image)
-    print(f"∇R_L2(x): shape = {grad_l2.shape}")
-    print(f"||∇R_L2(x)||² = {np.sum(grad_l2**2):.6f}")
-    print(f"min(∇R_L2) = {np.min(grad_l2):.6f}")
-    print(f"max(∇R_L2) = {np.max(grad_l2):.6f}")
+    grad_l2 = l2_model.compute_gradient(test_img)
+    norm_grad_l2 = np.sum(grad_l2**2)
+    print(f"  -> Dimensión del gradiente: {grad_l2.shape}")
+    print(f"  -> Magnitud del gradiente (Norma): {norm_grad_l2:.5f}")
+    print(f"  -> Rango dinámico: [{np.min(grad_l2):.4f}, {np.max(grad_l2):.4f}]")
     
     # ========================================================================
-    # Prueba 2: Regularizador Huber
+    # Test 2: Comportamiento Huber
     # ========================================================================
-    print("\n" + "=" * 70)
-    print("2. REGULARIZADOR HUBER DEL GRADIENTE")
-    print("=" * 70)
+    print("\n" + "-" * 70)
+    print(" [2] ANÁLISIS DE SENSIBILIDAD HUBER (Robustez)")
+    print("-" * 70)
     
-    # Probar con diferentes valores de delta
-    deltas = [0.01, 0.1, 1.0]
+    delta_params = [0.01, 0.1, 1.0]
     
-    for delta in deltas:
-        print(f"\n--- Con δ = {delta} ---")
-        reg_huber = HuberGradientRegularizer(delta=delta)
+    for d in delta_params:
+        print(f"\n  >>> Configurando umbral delta = {d}")
+        huber_model = HuberGradientRegularizer(delta=d)
         
-        # Calcular valor
-        value_huber = reg_huber.compute_value(image)
-        print(f"R_Huber(x) = {value_huber:.6f}")
+        cost_h = huber_model.compute_value(test_img)
+        print(f"      Costo calculado: {cost_h:.5f}")
         
-        # Calcular gradiente
-        grad_huber = reg_huber.compute_gradient(image)
-        print(f"||∇R_Huber(x)||² = {np.sum(grad_huber**2):.6f}")
+        grad_h = huber_model.compute_gradient(test_img)
+        print(f"      Energía del gradiente resultante: {np.sum(grad_h**2):.5f}")
     
     # ========================================================================
-    # Prueba 3: Comparación L2 vs Huber
+    # Test 3: Comparativa Directa
     # ========================================================================
-    print("\n" + "=" * 70)
-    print("3. COMPARACIÓN L2 vs HUBER (δ=0.1)")
-    print("=" * 70)
+    print("\n" + "-" * 70)
+    print(" [3] CONFRONTACIÓN DE MÉTRICAS (L2 vs Huber @ delta=0.1)")
+    print("-" * 70)
     
-    reg_huber = HuberGradientRegularizer(delta=0.1)
+    huber_ref = HuberGradientRegularizer(delta=0.1)
     
-    grad_x = compute_gradient_x(image)
-    grad_y = compute_gradient_y(image)
-    magnitude = np.sqrt(grad_x**2 + grad_y**2)
+    # Estadísticas de la imagen base
+    dx = compute_gradient_x(test_img)
+    dy = compute_gradient_y(test_img)
+    grad_mag = np.hypot(dx, dy)
     
-    print(f"\nEstadísticas del gradiente de la imagen:")
-    print(f"  Magnitud media: {np.mean(magnitude):.6f}")
-    print(f"  Magnitud máxima: {np.max(magnitude):.6f}")
-    print(f"  Magnitud mínima: {np.min(magnitude):.6f}")
+    print(f"\n  Estadísticas de entrada:")
+    print(f"    Media del gradiente: {np.mean(grad_mag):.5f}")
+    print(f"    Pico máximo: {np.max(grad_mag):.5f}")
     
-    print(f"\nComparación de valores:")
-    print(f"  R_L2(x) = {reg_l2.compute_value(image):.6f}")
-    print(f"  R_Huber(x, δ=0.1) = {reg_huber.compute_value(image):.6f}")
-    
-    print(f"\nComparación de gradientes:")
-    print(f"  ||∇R_L2(x)||² = {np.sum(grad_l2**2):.6f}")
-    print(f"  ||∇R_Huber(x)||² = {np.sum(grad_huber**2):.6f}")
+    print(f"\n  Diferencial de Costos:")
+    print(f"    L2 (Cuadrático puro): {l2_model.compute_value(test_img):.5f}")
+    print(f"    Huber (Híbrido):      {huber_ref.compute_value(test_img):.5f}")
     
     # ========================================================================
-    # Prueba 4: Imagen con borde fuerte
+    # Test 4: Detección de Bordes
     # ========================================================================
-    print("\n" + "=" * 70)
-    print("4. PRUEBA CON IMAGEN DE BORDE FUERTE")
-    print("=" * 70)
+    print("\n" + "-" * 70)
+    print(" [4] PRUEBA DE ESTRÉS CON DISCONTINUIDADES (Step Edge)")
+    print("-" * 70)
     
-    # Crear imagen con borde definido (mitad negro, mitad blanco)
-    edge_image = np.zeros((32, 32))
-    edge_image[:, 16:] = 1.0
+    # Sintetizar imagen con un escalón perfecto (borde nítido)
+    step_img = np.zeros((32, 32))
+    step_img[:, 16:] = 1.0  # Mitad derecha blanca
     
-    print(f"\nImagen con borde vertical en x=16")
+    print(f"\n  [INPUT] Imagen con borde vertical abrupto en x=16")
     
-    value_l2_edge = reg_l2.compute_value(edge_image)
-    value_huber_edge = reg_huber.compute_value(edge_image)
+    val_l2_edge = l2_model.compute_value(step_img)
+    val_huber_edge = huber_ref.compute_value(step_img)
     
-    print(f"  R_L2(x_borde) = {value_l2_edge:.6f}")
-    print(f"  R_Huber(x_borde, δ=0.1) = {value_huber_edge:.6f}")
-    print(f"  Ratio Huber/L2 = {value_huber_edge/value_l2_edge:.4f}")
-    print(f"\n  → Huber penaliza menos el borde (preserva bordes)")
+    print(f"    Penalización L2:    {val_l2_edge:.5f} (Castiga mucho el borde)")
+    print(f"    Penalización Huber: {val_huber_edge:.5f} (Castiga linealmente)")
     
-    print("\n" + "=" * 70)
-    print("✓ Todos los regularizadores funcionan correctamente")
-    print("=" * 70)
+    ratio = val_huber_edge / val_l2_edge
+    print(f"\n  -> Factor de reducción de penalización: {ratio:.4f}")
+    print("  -> CONCLUSIÓN: Huber protege la estructura del borde mejor que L2.")
     
-    # Resumen de características
-    print("\n📋 RESUMEN:")
-    print("  • L2: Suaviza uniformemente toda la imagen")
-    print("  • Huber: Preserva bordes fuertes, suaviza regiones homogéneas")
-    print("  • δ pequeño → más preservación de bordes")
-    print("  • δ grande → se acerca a comportamiento L2")
+    print("\n" + "*" * 70)
+    print(" VERIFICACIÓN EXITOSA: TODOS LOS SISTEMAS OPERATIVOS")
+    print("*" * 70)
