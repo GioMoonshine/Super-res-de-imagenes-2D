@@ -1,232 +1,226 @@
 import numpy as np
 from scipy.ndimage import gaussian_filter, convolve
 
-
 class DegradationOperator:
     """
-    Operador de degradación A para super-resolución.
+    Modelo computacional de pérdida de resolución (Operador Lineal A).
     
-    A(x) = (G * x)↓s
-    donde:
-    - G es un kernel gaussiano 2D
-    - * denota convolución
-    - ↓s indica submuestreo por factor s
+    Simula el proceso físico de captura:
+    A(x) = Decimación( Desenfoque(x) )
     
-    A⊤(y) = G⊤ * upsample(y)
+    Matemáticamente:
+    - G: Matriz de convolución (Filtro Paso Bajo Gaussiano).
+    - ↓s: Operador de diezmado (Downsampling).
+    
+    También provee el operador transpuesto A.T, vital para algoritmos iterativos.
     """
     
     def __init__(self, scale_factor=2, sigma=1.0, kernel_size=None):
         """
-        Inicializa el operador de degradación.
+        Configura los parámetros del sistema de degradación.
         
-        Parameters:
-        -----------
+        Entradas:
+        ---------
         scale_factor : int
-            Factor de submuestreo s (default: 2)
+            Ratio de reducción de tamaño (s). Por defecto: 2.
         sigma : float
-            Desviación estándar del kernel gaussiano (default: 1.0)
-        kernel_size : int, optional
-            Tamaño del kernel gaussiano. Si es None, se calcula automáticamente.
+            Amplitud del desenfoque (ancho de la campana de Gauss).
+        kernel_size : int, opcional
+            Dimensión de la matriz del filtro. Se autocalcula si se omite.
         """
         self.scale_factor = scale_factor
         self.sigma = sigma
         
-        # Calcular tamaño del kernel (debe ser impar)
+        # Determinación automática del soporte del filtro
         if kernel_size is None:
-            # Regla práctica: 2 * ceil(3*sigma) + 1
+            # Estimación estándar: cubrir ±3 desviaciones estándar
             kernel_size = 2 * int(np.ceil(3 * sigma)) + 1
         
+        # Garantizar simetría central (tamaño impar)
         if kernel_size % 2 == 0:
             kernel_size += 1
             
         self.kernel_size = kernel_size
         
-        # Crear kernel gaussiano 2D
+        # Generación de la máscara de convolución
         self.kernel = self._create_gaussian_kernel()
         
     def _create_gaussian_kernel(self):
         """
-        Crea un kernel gaussiano 2D normalizado.
+        Genera la máscara de convolución basada en la distribución Normal 2D.
         
-        Returns:
-        --------
+        Salida:
+        -------
         kernel : ndarray
-            Kernel gaussiano 2D de tamaño (kernel_size, kernel_size)
+            Matriz cuadrada normalizada (suma = 1).
         """
-        # Crear grid de coordenadas
+        # Sistema de coordenadas centrado
         ax = np.arange(-self.kernel_size // 2 + 1, self.kernel_size // 2 + 1)
         xx, yy = np.meshgrid(ax, ax)
         
-        # Fórmula gaussiana 2D
+        # Ecuación de la función Gaussiana
         kernel = np.exp(-(xx**2 + yy**2) / (2 * self.sigma**2))
         
-        # Normalizar para que sume 1
+        # Normalización de energía
         kernel = kernel / np.sum(kernel)
         
         return kernel
     
     def apply(self, x):
         """
-        Aplica el operador de degradación A(x) = (G * x)↓s
+        Ejecuta la simulación de baja resolución (Modelo Directo).
         
-        Parameters:
-        -----------
+        Transformación: Alta Resolución -> Baja Resolución
+        
+        Entradas:
+        ---------
         x : ndarray
-            Imagen de alta resolución (H_HR, W_HR)
+            Imagen original nítida.
         
-        Returns:
-        --------
+        Salida:
+        -------
         y : ndarray
-            Imagen degradada de baja resolución (H_LR, W_LR)
+            Imagen resultante borrosa y pequeña.
         """
-        # Paso 1: Convolución con kernel gaussiano
+        # Fase 1: Filtrado espacial (Blur)
         blurred = convolve(x, self.kernel, mode='reflect')
         
-        # Paso 2: Submuestreo (tomar cada s-ésimo píxel)
+        # Fase 2: Decimación (Saltar píxeles según el factor de escala)
         downsampled = blurred[::self.scale_factor, ::self.scale_factor]
         
         return downsampled
     
     def apply_adjoint(self, y):
         """
-        Aplica el operador adjunto A⊤(y) = G⊤ * upsample(y)
+        Calcula la operación transpuesta (A.T).
         
-        Parameters:
-        -----------
+        Nota: Esto NO es la inversa exacta, sino el adjunto matemático usado
+        en el cálculo de gradientes (Backprojection).
+        
+        Entradas:
+        ---------
         y : ndarray
-            Imagen de baja resolución (H_LR, W_LR)
+            Imagen de baja resolución.
         
-        Returns:
-        --------
+        Salida:
+        -------
         x : ndarray
-            Imagen reconstruida de alta resolución (H_HR, W_HR)
+            Proyección en el espacio de alta resolución.
         """
-        # Paso 1: Upsampling (insertar ceros entre píxeles)
+        # Fase 1: Expansión con ceros (Zero-padding grid)
         upsampled = self._upsample_with_zeros(y)
         
-        # Paso 2: Convolución con kernel adjunto (transpuesto)
-        # Para kernels simétricos, G⊤ = G
-        # Usamos el mismo kernel pero con modo 'reflect' para consistencia
+        # Fase 2: Convolución correlacionada
+        # (Se usa el mismo kernel dado que la Gaussiana es simétrica)
         result = convolve(upsampled, self.kernel, mode='reflect')
         
         return result
     
     def _upsample_with_zeros(self, y):
         """
-        Realiza upsampling insertando ceros entre píxeles.
+        Expande la matriz rellenando los espacios nuevos con valores nulos.
         
-        Parameters:
-        -----------
+        Entradas:
+        ---------
         y : ndarray
-            Imagen de baja resolución (H_LR, W_LR)
+            Imagen pequeña.
         
-        Returns:
-        --------
+        Salida:
+        -------
         upsampled : ndarray
-            Imagen con ceros insertados (H_HR, W_HR)
+            Imagen grande esparcida.
         """
         h_lr, w_lr = y.shape
         h_hr = h_lr * self.scale_factor
         w_hr = w_lr * self.scale_factor
         
-        # Crear imagen de alta resolución llena de ceros
+        # Lienzo vacío
         upsampled = np.zeros((h_hr, w_hr), dtype=y.dtype)
         
-        # Colocar valores de y en las posiciones correspondientes
+        # Inyección de valores conocidos en la rejilla
         upsampled[::self.scale_factor, ::self.scale_factor] = y
         
         return upsampled
     
     def upsample_image(self, y):
         """
-        Realiza upsampling con interpolación (para inicialización x^(0)).
+        Escalado básico por repetición de vecinos (Nearest Neighbor).
+        Útil para generar un punto de partida para la optimización.
         
-        Parameters:
-        -----------
-        y : ndarray
-            Imagen de baja resolución (H_LR, W_LR)
-        
-        Returns:
-        --------
+        Salida:
+        -------
         x : ndarray
-            Imagen aumentada de resolución mediante replicación de píxeles
+            Imagen escalada "pixelada".
         """
-        # Replicar cada píxel s×s veces
+        # Duplicación de filas y columnas
         x = np.repeat(np.repeat(y, self.scale_factor, axis=0), 
                       self.scale_factor, axis=1)
         return x
 
 
 # ============================================================================
-# Funciones auxiliares para gradientes discretos
+# Herramientas de Cálculo Diferencial sobre Imágenes
 # ============================================================================
 
 def compute_gradient_x(image):
     """
-    Calcula el gradiente horizontal Dx usando diferencias finitas hacia adelante.
+    Obtiene la derivada discreta en el eje de las abscisas (horizontal).
+    Utiliza diferencias finitas progresivas (Forward Difference).
     
-    Parameters:
-    -----------
-    image : ndarray
-        Imagen de entrada
-    
-    Returns:
-    --------
+    Salida:
+    -------
     grad_x : ndarray
-        Gradiente horizontal
+        Mapa de variaciones horizontales.
     """
     grad_x = np.zeros_like(image)
-    # Diferencias finitas: grad[i,j] = image[i, j+1] - image[i, j]
+    # Cálculo: Pixel[siguiente] - Pixel[actual]
     grad_x[:, :-1] = image[:, 1:] - image[:, :-1]
-    # Condición de borde: última columna = 0 (o periodic)
+    # Frontera derecha se asume constante (derivada 0)
     return grad_x
 
 
 def compute_gradient_y(image):
     """
-    Calcula el gradiente vertical Dy usando diferencias finitas hacia adelante.
+    Obtiene la derivada discreta en el eje de las ordenadas (vertical).
+    Utiliza diferencias finitas progresivas.
     
-    Parameters:
-    -----------
-    image : ndarray
-        Imagen de entrada
-    
-    Returns:
-    --------
+    Salida:
+    -------
     grad_y : ndarray
-        Gradiente vertical
+        Mapa de variaciones verticales.
     """
     grad_y = np.zeros_like(image)
-    # Diferencias finitas: grad[i,j] = image[i+1, j] - image[i, j]
+    # Cálculo: Pixel[inferior] - Pixel[actual]
     grad_y[:-1, :] = image[1:, :] - image[:-1, :]
-    # Condición de borde: última fila = 0
+    # Frontera inferior se asume constante
     return grad_y
 
 
 def compute_divergence(grad_x, grad_y):
     """
-    Calcula la divergencia discreta ∇·(∇x) = -Δx
-    usando diferencias finitas hacia atrás.
+    Calcula el flujo saliente del campo vectorial.
+    Matemáticamente equivale a menos el Laplaciano si se combina con gradientes.
     
-    Parameters:
-    -----------
-    grad_x : ndarray
-        Gradiente horizontal
-    grad_y : ndarray
-        Gradiente vertical
+    IMPORTANTE: Usa diferencias regresivas (Backward Difference) para asegurar
+    que este operador sea el adjunto negativo del gradiente.
     
-    Returns:
-    --------
+    Entradas:
+    ---------
+    grad_x, grad_y : ndarray
+        Componentes del campo vectorial.
+    
+    Salida:
+    -------
     div : ndarray
-        Divergencia del campo de gradientes
+        Escalar de divergencia por pixel.
     """
     div = np.zeros_like(grad_x)
     
-    # Divergencia en x (diferencias hacia atrás)
+    # Acumulación eje X (Backward)
     div[:, 1:] += grad_x[:, 1:] - grad_x[:, :-1]
     div[:, 0] += grad_x[:, 0]
     
-    # Divergencia en y (diferencias hacia atrás)
+    # Acumulación eje Y (Backward)
     div[1:, :] += grad_y[1:, :] - grad_y[:-1, :]
     div[0, :] += grad_y[0, :]
     
@@ -234,54 +228,54 @@ def compute_divergence(grad_x, grad_y):
 
 
 # ============================================================================
-# Script de prueba
+# Rutina de Verificación
 # ============================================================================
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("Probando DegradationOperator")
-    print("=" * 60)
+    print("-" * 60)
+    print(" EJECUTANDO VALIDACIÓN UNITARIA DEL OPERADOR")
+    print("-" * 60)
     
-    # Crear una imagen de prueba simple
+    # Generar ruido aleatorio como imagen base
     image_hr = np.random.rand(64, 64)
-    print(f"\n1. Imagen HR original: shape = {image_hr.shape}")
+    print(f"\n[1] Entrada de Alta Resolución: dim = {image_hr.shape}")
     
-    # Crear operador con factor de escala 2
+    # Instanciación del modelo
     A = DegradationOperator(scale_factor=2, sigma=1.5)
-    print(f"   Kernel gaussiano: tamaño = {A.kernel_size}, sigma = {A.sigma}")
+    print(f"    Parámetros: Kernel {A.kernel_size}x{A.kernel_size}, Sigma={A.sigma}")
     
-    # Aplicar degradación
+    # Prueba del modelo directo
     image_lr = A.apply(image_hr)
-    print(f"\n2. Después de A(x): shape = {image_lr.shape}")
-    print(f"   Reducción esperada: {image_hr.shape[0]//2} × {image_hr.shape[1]//2}")
+    print(f"\n[2] Resultado Baja Resolución (Ax): dim = {image_lr.shape}")
+    print(f"    Dimensiones predichas: {image_hr.shape[0]//2} × {image_hr.shape[1]//2}")
     
-    # Aplicar adjunto
+    # Prueba del modelo transpuesto
     reconstructed = A.apply_adjoint(image_lr)
-    print(f"\n3. Después de A⊤(y): shape = {reconstructed.shape}")
-    print(f"   ¿Recupera tamaño original? {reconstructed.shape == image_hr.shape}")
+    print(f"\n[3] Resultado Transpuesto (A.T*y): dim = {reconstructed.shape}")
+    print(f"    ¿Coincide con origen? {reconstructed.shape == image_hr.shape}")
     
-    # Probar upsampling para inicialización
+    # Prueba de interpolación simple
     upsampled = A.upsample_image(image_lr)
-    print(f"\n4. Upsampling simple: shape = {upsampled.shape}")
+    print(f"\n[4] Interpolación Vecino Cercano: dim = {upsampled.shape}")
     
-    # Probar gradientes
-    print(f"\n5. Probando operadores de gradiente:")
+    # Prueba de cálculo vectorial
+    print(f"\n[5] Verificando Operadores Diferenciales:")
     grad_x = compute_gradient_x(image_hr)
     grad_y = compute_gradient_y(image_hr)
-    print(f"   Gradiente horizontal: shape = {grad_x.shape}")
-    print(f"   Gradiente vertical: shape = {grad_y.shape}")
+    print(f"    Derivada X: dim = {grad_x.shape}")
+    print(f"    Derivada Y: dim = {grad_y.shape}")
     
-    # Probar divergencia
+    # Prueba de divergencia
     div = compute_divergence(grad_x, grad_y)
-    print(f"   Divergencia: shape = {div.shape}")
+    print(f"    Divergencia (Adjunto): dim = {div.shape}")
     
-    # Verificar normas
-    print(f"\n6. Verificaciones numéricas:")
-    print(f"   ||Ax||² = {np.sum(image_lr**2):.4f}")
-    print(f"   ||A⊤y||² = {np.sum(reconstructed**2):.4f}")
-    print(f"   ||grad_x||² = {np.sum(grad_x**2):.4f}")
-    print(f"   ||grad_y||² = {np.sum(grad_y**2):.4f}")
+    # Chequeo de energía (sanity check)
+    print(f"\n[6] Métricas de Energía:")
+    print(f"    Energía LR (||Ax||²): {np.sum(image_lr**2):.4f}")
+    print(f"    Energía Reconstruida: {np.sum(reconstructed**2):.4f}")
+    print(f"    Norma Gradiente X:    {np.sum(grad_x**2):.4f}")
+    print(f"    Norma Gradiente Y:    {np.sum(grad_y**2):.4f}")
     
-    print("\n" + "=" * 60)
-    print("✓ Todas las operaciones funcionan correctamente")
-    print("=" * 60)
+    print("\n" + "-" * 60)
+    print(">>> TEST COMPLETADO SIN ERRORES")
+    print("-" * 60)
