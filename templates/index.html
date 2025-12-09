@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super-Resolución Proyecto Final</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+<div class="container py-5">
+    <h1 class="text-center mb-4">Super-Resolución de Imágenes (Problema Inverso)</h1>
+    
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="alert alert-danger">
+            <ul class="mb-0">
+            {% for message in messages %}
+                <li>{{ message }}</li>
+            {% endfor %}
+            </ul>
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="card shadow">
+        <div class="card-body">
+            <form action="/superresolution" method="POST" enctype="multipart/form-data">
+                
+                <div class="mb-4">
+                    <label for="image" class="form-label fw-bold">1. Subir Imagen LR (Baja Resolución)</label>
+                    <input type="file" class="form-control" name="image" id="image" required accept=".png, .jpg, .jpeg">
+                </div>
+
+                <hr>
+
+                <h5 class="mb-3">Parámetros de Degradación (Operador A)</h5>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Factor de Submuestreo (s)</label>
+                        <select name="scale_factor" class="form-select">
+                            <option value="2" selected>2x</option>
+                            <option value="3">3x</option>
+                            <option value="4">4x</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Sigma del Blur Gaussiano</label>
+                        <input type="number" step="0.1" name="sigma" class="form-control" value="1.5">
+                    </div>
+                </div>
+
+                <hr>
+
+                <h5 class="mb-3">Configuración del Algoritmo</h5>
+                
+                <div class="mb-3">
+                    <label class="form-label">Tipo de Regularización</label>
+                    <select name="regularizer" class="form-select" id="regSelector" onchange="toggleDelta()">
+                        <option value="l2">L2 del Gradiente (Tikhonov)</option>
+                        <option value="huber">Huber del Gradiente (TV Suave)</option>
+                    </select>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Lambda (&lambda;) - Peso Regularización</label>
+                        <input type="number" step="0.001" name="lambda_reg" class="form-control" value="0.01">
+                    </div>
+                    <div class="col-md-6" id="deltaGroup" style="display:none;">
+                        <label class="form-label">Delta (&delta;) - Umbral Huber</label>
+                        <input type="number" step="0.01" name="delta" class="form-control" value="0.1">
+                    </div>
+                </div>
+
+                <div class="row g-3 mt-2">
+                    <div class="col-md-6">
+                        <label class="form-label">Paso de Descenso (Learning Rate &tau;)</label>
+                        <input type="number" step="0.0001" name="tau" class="form-control" value="0.001">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Número de Iteraciones</label>
+                        <input type="number" name="max_iter" class="form-control" value="100">
+                    </div>
+                </div>
+
+                <div class="d-grid gap-2 mt-5">
+                    <button type="submit" class="btn btn-primary btn-lg">Ejecutar Super-Resolución</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Pequeño script para mostrar/ocultar el campo Delta si se elige Huber
+    function toggleDelta() {
+        const selector = document.getElementById('regSelector');
+        const deltaGroup = document.getElementById('deltaGroup');
+        if (selector.value === 'huber') {
+            deltaGroup.style.display = 'block';
+        } else {
+            deltaGroup.style.display = 'none';
+        }
+    }
+</script>
+
+</body>
+</html>
