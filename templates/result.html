@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resultados Super-Resolución</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Resultados de Reconstrucción</h1>
+        <a href="/" class="btn btn-outline-secondary">Nueva Imagen</a>
+    </div>
+
+    <div class="alert alert-info">
+        <h5 class="alert-heading">Configuración Utilizada:</h5>
+        <div class="row">
+            <div class="col-md-4"><strong>Regularizador:</strong> {{ reg_name }}</div>
+            <div class="col-md-4"><strong>Lambda:</strong> {{ params.lambda_reg }}</div>
+            <div class="col-md-4"><strong>Iteraciones:</strong> {{ params.max_iter }}</div>
+            <div class="col-md-4"><strong>Factor Escala:</strong> {{ params.scale_factor }}x</div>
+            <div class="col-md-4"><strong>Paso (Tau):</strong> {{ params.tau }}</div>
+            <div class="col-md-4"><strong>Costo Final:</strong> {{ "%.5f"|format(final_cost) }}</div>
+        </div>
+    </div>
+
+    <div class="row mb-5">
+        <div class="col-md-6 text-center">
+            <div class="card h-100">
+                <div class="card-header bg-secondary text-white">Original (LR - Input)</div>
+                <div class="card-body">
+                    <img src="data:image/png;base64,{{ img_lr_data }}" class="img-fluid" style="image-rendering: pixelated; width: 100%;">
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 text-center">
+            <div class="card h-100 border-primary">
+                <div class="card-header bg-primary text-white">Reconstruida (HR - Output)</div>
+                <div class="card-body">
+                    <img src="data:image/png;base64,{{ img_hr_data }}" class="img-fluid" style="width: 100%;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-5">
+        <div class="card-header">Diagnóstico de Convergencia</div>
+        <div class="card-body text-center">
+            <img src="data:image/png;base64,{{ plot_data }}" class="img-fluid">
+        </div>
+    </div>
+
+</div>
+
+</body>
+</html>
