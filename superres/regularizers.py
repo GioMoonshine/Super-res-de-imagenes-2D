@@ -1,6 +1,6 @@
 import numpy as np
 from abc import ABC, abstractmethod
-from operators import compute_gradient_x, compute_gradient_y, compute_divergence
+from .operators import compute_gradient_x, compute_gradient_y, compute_divergence
 
 class Regularizer(ABC):
     """

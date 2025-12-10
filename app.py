@@ -5,10 +5,15 @@ import numpy as np
 # Importación de tus módulos personalizados
 # Nota: Asegúrate de que gradient_descent.py contenga la clase SuperResolutionSolver
 # y que no haya conflictos de nombres con operators.py y regularizers.py
-from operators import DegradationOperator
-from regularizers import L2GradientRegularizer, HuberGradientRegularizer
-from gradient_descent import SuperResolutionSolver
-from utils import ImageProcessor, ValidationUtils, PlotUtils
+from superres import (
+    DegradationOperator,
+    L2GradientRegularizer,
+    HuberGradientRegularizer,
+    SuperResolutionSolver,
+    ImageProcessor,
+    PlotUtils,
+    ValidationUtils
+)
 
 app = Flask(__name__)
 app.secret_key = 'super_resolucion_secret_key'  # Necesario para mensajes flash
