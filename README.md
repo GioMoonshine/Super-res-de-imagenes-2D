@@ -1,4 +1,4 @@
-# 🖼️ Proyecto de Super-Resolución de Imágenes (Problema Inverso)
+# Proyecto de Super-Resolución de Imágenes (Problema Inverso)
 
 Este proyecto implementa una solución de **Super-Resolución de Imágenes** (SR) formulada como un problema inverso de optimización. Utiliza el método de **Descenso de Gradiente** para reconstruir una imagen de alta resolución (HR) a partir de una imagen de baja resolución (LR) ruidosa y degradada, incorporando técnicas de regularización para asegurar la calidad de la reconstrucción.
 
@@ -15,7 +15,7 @@ Donde:
 
 ---
 
-## 🏗️ Estructura del Proyecto
+## Estructura del Proyecto
 
 El código está organizado en módulos Python que encapsulan las principales componentes del problema inverso.
 
@@ -30,7 +30,7 @@ El código está organizado en módulos Python que encapsulan las principales co
 
 ---
 
-## ⚙️ Parámetros de Configuración
+## Parámetros de Configuración
 
 La reconstrucción es sensible a los parámetros del modelo, que pueden configurarse desde la interfaz web (`index.html`):
 
@@ -46,7 +46,7 @@ La reconstrucción es sensible a los parámetros del modelo, que pueden configur
 
 ---
 
-## 🚀 Uso (Ejemplo Web)
+## Uso (Ejemplo Web)
 
 Este proyecto parece estar diseñado para ejecutarse dentro de un entorno web (probablemente usando un framework como Flask o Django, a juzgar por el uso de `index.html` y `result.html` con *templating*).
 
@@ -67,7 +67,7 @@ Este proyecto parece estar diseñado para ejecutarse dentro de un entorno web (p
 
 ---
 
-## 🔬 Observaciones Técnicas
+## Observaciones Técnicas
 
 * **Implementación de Gradiente:** Las funciones de gradiente en `regularizers.py` y el adjunto del operador de degradación en `operators.py` son cruciales para la convergencia del Descenso de Gradiente.
 * **Regularizador de Huber:** La implementación del regularizador de Huber en `regularizers.py` es fundamental para lograr una buena **preservación de bordes** en la imagen reconstruida, ya que penaliza menos los grandes saltos de intensidad (bordes) que el regularizador L2.
