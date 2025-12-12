@@ -1,6 +1,6 @@
 # 🖼️ Proyecto de Super-Resolución de Imágenes (Problema Inverso)
 
-En este proyecto, presentamos una solución de resolución de super imagen (SR) formulada como un problema inverso mediante la aplicación de descenso de gradiente con métodos de regularización para obtener resultados de mejor calidad al reconstruir una imagen de alta resolución (HR) a partir de una imagen de baja resolución (LR) con ruido y degradación.
+Este proyecto implementa una solución de **Super-Resolución de Imágenes** (SR) formulada como un problema inverso de optimización. Utiliza el método de **Descenso de Gradiente** para reconstruir una imagen de alta resolución (HR) a partir de una imagen de baja resolución (LR) ruidosa y degradada, incorporando técnicas de regularización para asegurar la calidad de la reconstrucción.
 
 El objetivo es minimizar la función de costo:
 
